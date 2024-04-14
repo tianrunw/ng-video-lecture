@@ -47,6 +47,9 @@ MAX_ITERS = 5000
 EVAL_INTERVAL = MAX_ITERS // 10
 EVAL_ITERS = 100
 
+N_LAYER = 3
+DROPOUT = 0.2
+
 
 def get_batch(split):
     data = TRAIN_DATA if split == 'train' else VAL_DATA
@@ -81,6 +84,7 @@ class Head(nn.Module):
         self.query = nn.Linear(EMBEDDING_DIM, head_size, bias=False)
         self.value = nn.Linear(EMBEDDING_DIM, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(BLOCK_SIZE, BLOCK_SIZE)))
+        self.dropout = nn.Dropout(DROPOUT)
 
     def forward(self, x: torch.Tensor):
         B, T, C = x.shape
@@ -89,6 +93,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * (C ** -0.5)  # B, T, T
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))  # B, T, T
         wei = functional.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
         v = self.value(x)  # self attention, B, T, H
         out = wei @ v  # B, T, H
         return out
@@ -99,10 +104,12 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
         self.proj = nn.Linear(EMBEDDING_DIM, EMBEDDING_DIM)
+        self.dropout = nn.Dropout(DROPOUT)
 
     def forward(self, x: torch.Tensor):
         out = torch.cat([h(x) for h in self.heads], dim=-1)  # B, T, EMBEDDING
-        return self.proj(out)
+        out = self.dropout(self.proj(out))
+        return out
 
 
 class FeedForward(nn.Module):
@@ -112,6 +119,7 @@ class FeedForward(nn.Module):
             nn.Linear(n_embedding, 4 * n_embedding),
             nn.ReLU(),
             nn.Linear(4 * n_embedding, n_embedding),
+            nn.Dropout(DROPOUT),
         )
 
     def forward(self, x: torch.Tensor):
@@ -123,10 +131,12 @@ class Block(nn.Module):
         super().__init__()
         self.sa_heads = MultiHeadAttention(n_heads, n_embedding // n_heads)  # Communication
         self.ffwd = FeedForward(n_embedding)  # Computation
+        self.ln1 = nn.LayerNorm(n_embedding)
+        self.ln2 = nn.LayerNorm(n_embedding)
 
     def forward(self, x: torch.Tensor):
-        x = x + self.sa_heads(x)
-        x = x + self.ffwd(x)
+        x = x + self.sa_heads(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
         return x
 
 
@@ -137,9 +147,8 @@ class BigramLanguageModel(nn.Module):
         self.token_embedding_table = nn.Embedding(VOCAB_SIZE, EMBEDDING_DIM)
         self.position_embedding_table = nn.Embedding(BLOCK_SIZE, EMBEDDING_DIM)
         self.blocks = nn.Sequential(
-            Block(EMBEDDING_DIM, n_heads),
-            Block(EMBEDDING_DIM, n_heads),
-            Block(EMBEDDING_DIM, n_heads),
+            *[Block(EMBEDDING_DIM, n_heads) for _ in range(N_LAYER)],
+            nn.LayerNorm(EMBEDDING_DIM)
         )
         self.lm_head = nn.Linear(EMBEDDING_DIM, VOCAB_SIZE)
 
