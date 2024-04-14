@@ -83,6 +83,7 @@ class BigramLanguageModel(nn.Module):
         self.lm_head = nn.Linear(EMBEDDING_DIM, vocab_size)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor = None):
+        idx = idx[:, -BLOCK_SIZE:]  # make sure index in position embedding table does not go out of bound
         B, T = idx.shape
         token_embeddings = self.token_embedding_table(idx)  # B, T, C
         position_embeddings = self.position_embedding_table(torch.arange(T, device=DEVICE))  # T, C
