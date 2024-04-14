@@ -103,27 +103,42 @@ class MultiHeadAttention(nn.Module):
         return torch.cat([h(x) for h in self.heads], dim=-1)  # B, T, EMBEDDING // num_heads
 
 
+class FeedForward(nn.Module):
+    def __init__(self, n_embedding):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embedding, n_embedding),
+            nn.ReLU()
+        )
+
+    def forward(self, x: torch.Tensor):
+        return self.net(x)
+
+
 class BigramLanguageModel(nn.Module):
 
     def __init__(self, num_heads):
         super().__init__()
         self.token_embedding_table = nn.Embedding(VOCAB_SIZE, EMBEDDING_DIM)
         self.position_embedding_table = nn.Embedding(BLOCK_SIZE, EMBEDDING_DIM)
-        self.lm_head = nn.Linear(EMBEDDING_DIM, VOCAB_SIZE)
         self.sa_heads = MultiHeadAttention(num_heads, EMBEDDING_DIM // num_heads)
+        self.ffwd = FeedForward(EMBEDDING_DIM)
+        self.lm_head = nn.Linear(EMBEDDING_DIM, VOCAB_SIZE)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor = None):
         B, T = idx.shape
         token_embeddings = self.token_embedding_table(idx)  # B, T, C
         position_embeddings = self.position_embedding_table(torch.arange(T, device=DEVICE))  # T, C
         x = token_embeddings + position_embeddings
-        x = self.sa_heads(x)
+        x = self.sa_heads(x)  # B, T, H
+        x = self.ffwd(x)  # B, T, H
         logits = self.lm_head(x)  # B, T, V
 
         if targets is None:
             loss = None
         else:
             B, T, V = logits.shape
+            # At every time step, for every context up to current time step, we have a prediction
             logits = logits.view(B * T, V)
             targets = targets.view(B * T)
             loss = functional.cross_entropy(logits, targets)
@@ -135,7 +150,8 @@ class BigramLanguageModel(nn.Module):
         for _ in range(max_new_tokens):
             # get predictions
             logits, loss = self(idx[:, -BLOCK_SIZE:])
-            # last time step
+            # For every context/sample in the batch, we have a prediction. The last time step's prediction has the
+            # longest context.
             logits = logits[:, -1, :]  # (B, C)
             # softmax
             probs = functional.softmax(logits, dim=-1)
