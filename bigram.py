@@ -95,34 +95,52 @@ class Head(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, num_heads, head_size):
+    def __init__(self, n_heads, head_size):
         super().__init__()
-        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
+        self.proj = nn.Linear(EMBEDDING_DIM, EMBEDDING_DIM)
 
     def forward(self, x: torch.Tensor):
-        return torch.cat([h(x) for h in self.heads], dim=-1)  # B, T, EMBEDDING // num_heads
+        out = torch.cat([h(x) for h in self.heads], dim=-1)  # B, T, EMBEDDING
+        return self.proj(out)
 
 
 class FeedForward(nn.Module):
     def __init__(self, n_embedding):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embedding, n_embedding),
-            nn.ReLU()
+            nn.Linear(n_embedding, 4 * n_embedding),
+            nn.ReLU(),
+            nn.Linear(4 * n_embedding, n_embedding),
         )
 
     def forward(self, x: torch.Tensor):
         return self.net(x)
 
 
+class Block(nn.Module):
+    def __init__(self, n_embedding, n_heads):
+        super().__init__()
+        self.sa_heads = MultiHeadAttention(n_heads, n_embedding // n_heads)  # Communication
+        self.ffwd = FeedForward(n_embedding)  # Computation
+
+    def forward(self, x: torch.Tensor):
+        x = x + self.sa_heads(x)
+        x = x + self.ffwd(x)
+        return x
+
+
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, num_heads):
+    def __init__(self, n_heads):
         super().__init__()
         self.token_embedding_table = nn.Embedding(VOCAB_SIZE, EMBEDDING_DIM)
         self.position_embedding_table = nn.Embedding(BLOCK_SIZE, EMBEDDING_DIM)
-        self.sa_heads = MultiHeadAttention(num_heads, EMBEDDING_DIM // num_heads)
-        self.ffwd = FeedForward(EMBEDDING_DIM)
+        self.blocks = nn.Sequential(
+            Block(EMBEDDING_DIM, n_heads),
+            Block(EMBEDDING_DIM, n_heads),
+            Block(EMBEDDING_DIM, n_heads),
+        )
         self.lm_head = nn.Linear(EMBEDDING_DIM, VOCAB_SIZE)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor = None):
@@ -130,8 +148,7 @@ class BigramLanguageModel(nn.Module):
         token_embeddings = self.token_embedding_table(idx)  # B, T, C
         position_embeddings = self.position_embedding_table(torch.arange(T, device=DEVICE))  # T, C
         x = token_embeddings + position_embeddings
-        x = self.sa_heads(x)  # B, T, H
-        x = self.ffwd(x)  # B, T, H
+        x = self.blocks(x)  # B, T, H
         logits = self.lm_head(x)  # B, T, V
 
         if targets is None:
