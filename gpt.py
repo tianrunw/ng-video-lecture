@@ -27,11 +27,6 @@ def decode(encoding_list):
 
 
 DEVICE = 'cpu'
-if torch.cuda.is_available():
-    DEVICE = 'cuda'
-elif torch.backends.mps.is_available():
-    DEVICE = 'mps'
-
 print(f'Using device: {DEVICE}')
 
 DATA = torch.tensor(encode(TEXT), dtype=torch.long)
@@ -146,10 +141,10 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(VOCAB_SIZE, EMBEDDING_DIM)
         self.position_embedding_table = nn.Embedding(BLOCK_SIZE, EMBEDDING_DIM)
-        self.blocks = nn.Sequential(
-            *[Block(EMBEDDING_DIM, n_heads) for _ in range(N_LAYER)],
-            nn.LayerNorm(EMBEDDING_DIM)
-        )
+        # self.blocks = nn.Sequential(
+        #     *[Block(EMBEDDING_DIM, n_heads) for _ in range(N_LAYER)],
+        #     nn.LayerNorm(EMBEDDING_DIM)
+        # )
         self.lm_head = nn.Linear(EMBEDDING_DIM, VOCAB_SIZE)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor = None):
@@ -157,7 +152,7 @@ class BigramLanguageModel(nn.Module):
         token_embeddings = self.token_embedding_table(idx)  # B, T, C
         position_embeddings = self.position_embedding_table(torch.arange(T, device=DEVICE))  # T, C
         x = token_embeddings + position_embeddings
-        x = self.blocks(x)  # B, T, H
+        # x = self.blocks(x)  # B, T, H
         logits = self.lm_head(x)  # B, T, V
 
         if targets is None:
