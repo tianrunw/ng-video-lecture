@@ -26,12 +26,7 @@ def decode(encoding_list):
     return ''.join([I_TO_C[i] for i in encoding_list])
 
 
-DEVICE = 'cpu'
-# if torch.cuda.is_available():
-#     DEVICE = 'cuda'
-# elif torch.backends.mps.is_available():
-#     DEVICE = 'mps'
-
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Using device: {DEVICE}')
 
 DATA = torch.tensor(encode(TEXT), dtype=torch.long)
