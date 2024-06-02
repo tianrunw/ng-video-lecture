@@ -60,12 +60,12 @@ class Block(nn.Module):
         self.multi_heads = MultiHeadAttention(embd_size, block_size, n_head)
         self.feed_forward = Feedforward(embd_size)
         self.ln1 = nn.LayerNorm(embd_size)
-        self.ln1 = nn.LayerNorm(embd_size)
+        self.ln2 = nn.LayerNorm(embd_size)
 
     def forward(self, x: torch.Tensor):
-        out = x + self.multi_heads(self.ln1(x))
-        out = x + self.feed_forward(self.ln2(x))
-        return out
+        x = x + self.multi_heads(self.ln1(x))
+        x = x + self.feed_forward(self.ln2(x))
+        return x
 
 
 class Transformer(nn.Module):
